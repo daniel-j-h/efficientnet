@@ -4,12 +4,18 @@ See:
 - https://arxiv.org/abs/1905.11946 - EfficientNet
 - https://arxiv.org/abs/1801.04381 - MobileNet V2
 - https://arxiv.org/abs/1905.02244 - MobileNet V3
+- https://arxiv.org/abs/1709.01507 - Squeeze-and-Excitation
+- https://arxiv.org/abs/1803.02579 - Concurrent spatial and channel squeeze-and-excitation
 
 
 Known issues:
 
-- Not using swish activation function: no native implementation in
-  Pytorch. Unclear where, if, and how much it helps (MobileNet V3).
+- Not using swish activation function: unclear where, if, and how
+  much it helps. Needs more experimentation. See also MobileNet V3.
+
+- Not using squeeze and excitation blocks: I had significantly worse
+  results with scse blocks, and cse blocks alone did not help, too.
+  Needs more experimentation as it was done on small datasets only.
 
 - Not using DropConnect: no efficient native implementation in PyTorch.
   Unclear if and how much it helps over Dropout.
@@ -17,14 +23,14 @@ Known issues:
 
 Todo:
 
-- SE blocks (or even scse?)
-
-- See MobilenetV3 paper for tricks
+- See MobileNetV3 paper for tricks
   - Figure 5, re-do last stages
-  - Head only 16 filters
-  - SE blocks cf. 5.2.1
+  - Use only 16 filters in head
 
 - Pre-train on ImageNet; at least B0, B4
+
+- Provide tools for progressive resizing: initialize model n+1 with
+  weights from model n, and initialize new blocks and channels.
 
 """
 
@@ -184,6 +190,8 @@ class Bottleneck(nn.Module):
             nn.BatchNorm2d(expand),
             nn.ReLU6(inplace=True))
 
+        #self.scse = scSE(expand, r=0.25)
+
         self.linear = nn.Sequential(
             nn.Conv2d(expand, squeeze, kernel_size=1, bias=False),
             nn.BatchNorm2d(squeeze))
@@ -192,9 +200,85 @@ class Bottleneck(nn.Module):
     def forward(self, x):
         xx = self.expand(x)
         xx = self.depthwise(xx)
+        #xx = self.scse(xx)
         xx = self.linear(xx)
 
         if self.has_skip:
             xx.add_(x)
 
         return xx
+
+
+class cSE(nn.Module):
+    def __init__(self, planes, r):
+        super().__init__()
+
+        self.squeeze = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(planes, int(planes * r), kernel_size=1, bias=True),
+            nn.ReLU6(inplace=True))
+
+        self.expand = nn.Sequential(
+            nn.Conv2d(int(planes * r), planes, kernel_size=1, bias=True),
+            nn.Sigmoid())
+
+
+    def forward(self, x):
+        xx = self.squeeze(x)
+        xx = self.expand(xx)
+
+        return x * xx
+
+
+class sSE(nn.Module):
+    def __init__(self, planes):
+        super().__init__()
+
+        self.block = nn.Sequential(
+            nn.Conv2d(planes, 1, kernel_size=1, bias=True),
+            nn.Sigmoid())
+
+
+    def forward(self, x):
+        xx = self.block(x)
+
+        return x * xx
+
+
+class scSE(nn.Module):
+    def __init__(self, planes, r=0.25):
+        super().__init__()
+
+        self.cse = cSE(planes=planes, r=r)
+        self.sse = sSE(planes=planes)
+
+
+    def forward(self, x):
+        return self.cse(x) + self.sse(x)
+
+
+def swish(x, inplace=False):
+    return  x * torch.sigmoid(x)
+
+
+class Swish(nn.Module):
+    def forward(self, x):
+        return swish(x)
+
+
+def hardsigmoid(x):
+    return nn.functional.relu6(x + 3) / 6
+
+
+class Hardsigmoid(nn.Module):
+    def forward(self, x):
+        return hardsigmoid(x)
+
+
+def hardswish(x):
+    return x * hardsigmoid(x)
+
+
+class Hardswish(nn.Module):
+    def forward(self, x):
+        return hardswish(x)
