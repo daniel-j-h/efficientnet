@@ -6,6 +6,7 @@ See:
 - https://arxiv.org/abs/1905.02244 - MobileNet V3
 - https://arxiv.org/abs/1709.01507 - Squeeze-and-Excitation
 - https://arxiv.org/abs/1803.02579 - Concurrent spatial and channel squeeze-and-excitation
+- https://arxiv.org/abs/1812.01187 - Bag of Tricks for Image Classification with Convolutional Neural Networks
 
 
 Known issues:
@@ -128,6 +129,12 @@ class EfficientNet(nn.Module):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.zeros_(m.bias)
 
+        # Zero BatchNorm weight at end of res-blocks: identity by default
+        # See https://arxiv.org/abs/1812.01187 Section 3.1
+        for m in self.modules():
+            if isinstance(m, Bottleneck):
+                nn.init.zeros_(m.linear[1].weight)
+
 
     def _make_layer(self, n, expansion, cin, cout, kernel_size=3, stride=1):
         layers = []
@@ -176,10 +183,6 @@ class Bottleneck(nn.Module):
     def __init__(self, planes, expand, squeeze, kernel_size, stride):
         super().__init__()
 
-        # Bottlenecks stride=1 have skip, stride=2 do not
-        # See https://arxiv.org/abs/1801.04381 Figure 4 d
-        self.has_skip = stride == 1 and planes == squeeze
-
         self.expand = nn.Identity() if planes == expand else nn.Sequential(
             nn.Conv2d(planes, expand, kernel_size=1, bias=False),
             nn.BatchNorm2d(expand),
@@ -196,6 +199,21 @@ class Bottleneck(nn.Module):
             nn.Conv2d(expand, squeeze, kernel_size=1, bias=False),
             nn.BatchNorm2d(squeeze))
 
+        # Make all blocks skip-able via AvgPool + 1x1 Conv
+        # See https://arxiv.org/abs/1812.01187 Figure 2 c
+
+        downsample = []
+
+        if stride != 1:
+            downsample += [nn.AvgPool2d(kernel_size=stride, stride=stride)]
+
+        if planes != squeeze:
+            downsample += [
+                nn.Conv2d(planes, squeeze, kernel_size=1, stride=1, bias=False),
+                nn.BatchNorm2d(squeeze)]
+
+        self.downsample = nn.Identity() if not downsample else nn.Sequential(*downsample)
+
 
     def forward(self, x):
         xx = self.expand(x)
@@ -203,8 +221,8 @@ class Bottleneck(nn.Module):
         #xx = self.scse(xx)
         xx = self.linear(xx)
 
-        if self.has_skip:
-            xx.add_(x)
+        x = self.downsample(x)
+        xx.add_(x)
 
         return xx
 
