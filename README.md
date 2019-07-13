@@ -13,6 +13,7 @@ For more information see the provided resources below.
 - [EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks](https://arxiv.org/abs/1905.11946)
 - [MobileNetV2: Inverted Residuals and Linear Bottlenecks](https://arxiv.org/abs/1801.04381)
 - [Searching for MobileNetV3](https://arxiv.org/abs/1905.02244)
+- [MnasNet: Platform-Aware Neural Architecture Search for Mobile](https://arxiv.org/abs/1807.11626)
 
 
 ## License
