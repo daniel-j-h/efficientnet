@@ -6,6 +6,10 @@ EfficientNets are a family of models with much better accuracy and efficiency co
 Generally they use an order of magnitude fewer parameters and floating point operations per second compared to existing models with similar accuracy.
 For more information see the provided resources below.
 
+## Thanks
+
+- To [Harsimrat Sandhawalia](https://github.com/sandhawalia) for countless fruitful discussions
+- To the folks in [this fast.ai forum thread](https://forums.fast.ai/t/efficientnet/46978/76) about EfficientNet
 
 ## References
 
